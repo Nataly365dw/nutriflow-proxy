@@ -5,10 +5,13 @@ app.use(express.json({limit: '20mb'}));
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Headers', 'Content-Type');
-  res.header('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.header('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
   if (req.method === 'OPTIONS') return res.sendStatus(200);
   next();
 });
+
+// Wake up endpoint
+app.get('/ping', (req, res) => res.json({status:'ok'}));
 
 app.post('/analyze', async (req, res) => {
   try {
@@ -20,39 +23,34 @@ app.post('/analyze', async (req, res) => {
         'anthropic-version': '2023-06-01'
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
+        model: 'claude-haiku-4-5-20251001',
         max_tokens: 800,
         messages: req.body.messages
       })
     });
 
     const raw = await response.text();
-    console.log('Anthropic response:', raw);
+    console.log('Anthropic raw:', raw.slice(0, 300));
 
     let data;
-    try {
-      data = JSON.parse(raw);
-    } catch(e) {
-      return res.status(500).json({ error: 'Invalid JSON from Anthropic', raw: raw.slice(0, 200) });
-    }
+    try { data = JSON.parse(raw); }
+    catch(e) { return res.status(500).json({error: 'Invalid JSON: ' + raw.slice(0,200)}); }
+
+    if(data.error) return res.status(500).json({error: JSON.stringify(data.error)});
 
     const content = (data.content || []).map(b => b.text || '').join('');
-    console.log('Content:', content);
+    console.log('Content:', content.slice(0, 300));
 
     const clean = content.replace(/```json|```/g, '').trim();
 
     let foods;
-    try {
-      foods = JSON.parse(clean);
-    } catch(e) {
-      return res.status(500).json({ error: 'Could not parse food JSON', content: clean.slice(0, 200) });
-    }
+    try { foods = JSON.parse(clean); }
+    catch(e) { return res.status(500).json({error: 'Could not parse: ' + clean.slice(0,200)}); }
 
-    res.json({ foods });
-
+    res.json({foods});
   } catch (err) {
     console.error('Error:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({error: err.message});
   }
 });
 
