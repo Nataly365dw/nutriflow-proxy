@@ -19,11 +19,39 @@ app.post('/analyze', async (req, res) => {
         'x-api-key': process.env.ANTHROPIC_API_KEY,
         'anthropic-version': '2023-06-01'
       },
-      body: JSON.stringify(req.body)
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 800,
+        messages: req.body.messages
+      })
     });
-    const data = await response.json();
-    res.json(data);
+
+    const raw = await response.text();
+    console.log('Anthropic response:', raw);
+
+    let data;
+    try {
+      data = JSON.parse(raw);
+    } catch(e) {
+      return res.status(500).json({ error: 'Invalid JSON from Anthropic', raw: raw.slice(0, 200) });
+    }
+
+    const content = (data.content || []).map(b => b.text || '').join('');
+    console.log('Content:', content);
+
+    const clean = content.replace(/```json|```/g, '').trim();
+
+    let foods;
+    try {
+      foods = JSON.parse(clean);
+    } catch(e) {
+      return res.status(500).json({ error: 'Could not parse food JSON', content: clean.slice(0, 200) });
+    }
+
+    res.json({ foods });
+
   } catch (err) {
+    console.error('Error:', err);
     res.status(500).json({ error: err.message });
   }
 });
