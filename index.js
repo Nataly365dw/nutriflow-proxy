@@ -18,35 +18,35 @@ app.post('/analyze', async (req, res) => {
     const base64 = imageData.data;
     const mimeType = imageData.media_type || 'image/jpeg';
 
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
-      {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({
-          contents: [{
-            parts: [
-              {
-                inline_data: {
-                  mime_type: mimeType,
-                  data: base64
-                }
-              },
-              {
-                text: 'Identify all food items in this image. Return ONLY a valid JSON array, no markdown or other text: [{"name":"food name","estimatedGrams":100,"calories":200,"protein":10,"carbs":20,"fat":8,"fiber":2,"sugar":5}]'
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.GROQ_API_KEY}`
+      },
+      body: JSON.stringify({
+        model: 'llama-3.2-11b-vision-preview',
+        max_tokens: 800,
+        messages: [{
+          role: 'user',
+          content: [
+            {
+              type: 'image_url',
+              image_url: {
+                url: `data:${mimeType};base64,${base64}`
               }
-            ]
-          }],
-          generationConfig: {
-            temperature: 0.1,
-            maxOutputTokens: 800
-          }
-        })
-      }
-    );
+            },
+            {
+              type: 'text',
+              text: 'Identify all food items in this image. Return ONLY a valid JSON array, no markdown or other text: [{"name":"food name","estimatedGrams":100,"calories":200,"protein":10,"carbs":20,"fat":8,"fiber":2,"sugar":5}]'
+            }
+          ]
+        }]
+      })
+    });
 
     const raw = await response.text();
-    console.log('Gemini raw:', raw.slice(0, 300));
+    console.log('Groq raw:', raw.slice(0, 300));
 
     let data;
     try { data = JSON.parse(raw); }
@@ -54,7 +54,7 @@ app.post('/analyze', async (req, res) => {
 
     if(data.error) return res.status(500).json({error: JSON.stringify(data.error)});
 
-    const content = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    const content = data.choices?.[0]?.message?.content || '';
     console.log('Content:', content.slice(0, 300));
 
     const clean = content.replace(/```json|```/g, '').trim();
