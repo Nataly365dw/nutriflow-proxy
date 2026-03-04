@@ -40,7 +40,7 @@ const SELF_URL = process.env.RENDER_EXTERNAL_URL || null;
 if (SELF_URL) {
   setInterval(() => {
     require('https').get(`${SELF_URL}/ping`, r => r.resume()).on('error', () => {});
-  }, 10 * 60 * 1000); // every 10 minutes
+  }, 4 * 60 * 1000); // every 4 minutes (Render free tier sleeps after ~5 min)
   console.log('Self-ping enabled:', SELF_URL);
 }
 
@@ -117,19 +117,25 @@ app.get('/off-search', async (req, res) => {
     return res.json(cached);
   }
 
-  try {
-    const url = `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(q)}&search_simple=1&action=process&json=1&page_size=24&fields=product_name,nutriments,brands,serving_size`;
-    const response = await fetch(url, {
-      headers: { 'User-Agent': 'NutriFlow/1.0 (Android app)' },
-      signal: AbortSignal.timeout(8000),
-    });
-    const data = await response.json();
-    cacheSet(cacheKey, data);
-    res.setHeader('X-Cache', 'MISS');
-    res.json(data);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+  // Retry up to 2 times if OFF is slow
+  let lastErr;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const url = `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(q)}&search_simple=1&action=process&json=1&page_size=24&fields=product_name,nutriments,brands,serving_size`;
+      const response = await fetch(url, {
+        headers: { 'User-Agent': 'NutriFlow/1.0 (Android app)' },
+        signal: AbortSignal.timeout(12000),
+      });
+      const data = await response.json();
+      cacheSet(cacheKey, data);
+      res.setHeader('X-Cache', 'MISS');
+      return res.json(data);
+    } catch (err) {
+      lastErr = err;
+      if (attempt === 0) await new Promise(r => setTimeout(r, 1000)); // wait 1s before retry
+    }
   }
+  res.status(500).json({ error: lastErr.message });
 });
 
 // ── /off-barcode ──────────────────────────────────────────────────────────
@@ -164,5 +170,80 @@ app.get('/off-barcode', async (req, res) => {
   }
 });
 
+// ── /ai-search ────────────────────────────────────────────────────────────
+app.get('/ai-search', async (req, res) => {
+  const q = (req.query.q || '').trim();
+  if (!q) return res.status(400).json({ error: 'Missing query' });
+
+  // Cache AI results too — same food = same answer
+  const cacheKey = 'ai-search:' + q.toLowerCase();
+  const cached = cacheGet(cacheKey);
+  if (cached) {
+    res.setHeader('X-Cache', 'HIT');
+    return res.json(cached);
+  }
+
+  try {
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.GROQ_API_KEY}`
+      },
+      body: JSON.stringify({
+        model: 'llama-3.3-70b-versatile',
+        max_tokens: 1000,
+        temperature: 0.1,
+        messages: [{
+          role: 'system',
+          content: 'You are a nutrition database. Return ONLY valid JSON, no markdown, no explanation.'
+        }, {
+          role: 'user',
+          content: `Return nutrition data per 100g for: "${q}"
+Return a JSON array of 1-4 variations/preparations of this food (e.g. raw, cooked, fried).
+Each item must have these exact fields (all numbers, per 100g):
+{"name":"string","calories":0,"protein":0,"carbs":0,"fat":0,"fiber":0,"sugar":0,"salt":0,"sodium":0,"calcium":0,"iron":0,"vitC":0}
+Return ONLY the JSON array.`
+        }]
+      }),
+      signal: AbortSignal.timeout(15000),
+    });
+
+    const raw = await response.json();
+    if (raw.error) return res.status(500).json({ error: raw.error.message });
+
+    const content = raw.choices?.[0]?.message?.content || '';
+    const clean = content.replace(/```json|```/g, '').trim();
+    let foods;
+    try { foods = JSON.parse(clean); }
+    catch(e) { return res.status(500).json({ error: 'Could not parse AI response: ' + clean.slice(0, 100) }); }
+
+    const result = { foods };
+    cacheSet(cacheKey, result);
+    res.setHeader('X-Cache', 'MISS');
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── Start ─────────────────────────────────────────────────────────────────
 app.listen(process.env.PORT || 3000, () => console.log('NutriFlow proxy running!'));
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
