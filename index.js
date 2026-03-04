@@ -173,10 +173,11 @@ app.get('/off-barcode', async (req, res) => {
 // ── /ai-search ────────────────────────────────────────────────────────────
 app.get('/ai-search', async (req, res) => {
   const q = (req.query.q || '').trim();
+  const lang = (req.query.lang || 'en').trim();
   if (!q) return res.status(400).json({ error: 'Missing query' });
 
-  // Cache AI results too — same food = same answer
-  const cacheKey = 'ai-search:' + q.toLowerCase();
+  // Cache AI results too — same food + lang = same answer
+  const cacheKey = 'ai-search:' + lang + ':' + q.toLowerCase();
   const cached = cacheGet(cacheKey);
   if (cached) {
     res.setHeader('X-Cache', 'HIT');
@@ -201,6 +202,7 @@ app.get('/ai-search', async (req, res) => {
           role: 'user',
           content: `Return nutrition data per 100g for: "${q}"
 Return a JSON array of 1-4 variations/preparations of this food (e.g. raw, cooked, fried).
+Write the "name" field in this language code: ${lang} (e.g. en=English, tr=Turkish, de=German, es=Spanish, fr=French, ru=Russian).
 Each item must have these exact fields (all numbers, per 100g):
 {"name":"string","calories":0,"protein":0,"carbs":0,"fat":0,"fiber":0,"sugar":0,"salt":0,"sodium":0,"calcium":0,"iron":0,"vitC":0}
 Return ONLY the JSON array.`
