@@ -202,7 +202,7 @@ app.get('/ai-search', async (req, res) => {
           role: 'user',
           content: `Return nutrition data per 100g for: "${q}"
 Return a JSON array of 1-4 variations/preparations of this food (e.g. raw, cooked, fried).
-Write the "name" field in this language code: ${lang} (e.g. en=English, tr=Turkish, de=German, es=Spanish, fr=French, ru=Russian).
+Write the "name" field in ${lang === "tr" ? "Turkish" : lang === "de" ? "German" : lang === "es" ? "Spanish" : lang === "fr" ? "French" : lang === "ru" ? "Russian" : "English"}. Do NOT include language codes or prefixes in the name field.
 Each item must have these exact fields (all numbers, per 100g):
 {"name":"string","calories":0,"protein":0,"carbs":0,"fat":0,"fiber":0,"sugar":0,"salt":0,"sodium":0,"calcium":0,"iron":0,"vitC":0}
 Return ONLY the JSON array.`
@@ -231,29 +231,3 @@ Return ONLY the JSON array.`
 
 // ── Start ─────────────────────────────────────────────────────────────────
 app.listen(process.env.PORT || 3000, () => console.log('NutriFlow proxy running!'));
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
