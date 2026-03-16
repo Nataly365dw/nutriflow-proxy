@@ -229,5 +229,56 @@ Return ONLY the JSON array.`
   }
 });
 
+
+// ── /workout-search ───────────────────────────────────────────────────────
+app.get('/workout-search', async (req, res) => {
+  const q = (req.query.q || '').trim();
+  if (!q) return res.status(400).json({ error: 'Missing query' });
+
+  const cacheKey = 'workout:' + q.toLowerCase();
+  const cached = cacheGet(cacheKey);
+  if (cached) { res.setHeader('X-Cache', 'HIT'); return res.json(cached); }
+
+  try {
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.GROQ_API_KEY}` },
+      body: JSON.stringify({
+        model: 'llama-3.3-70b-versatile',
+        max_tokens: 500,
+        temperature: 0.1,
+        messages: [{
+          role: 'system',
+          content: 'You are a fitness MET database. Return ONLY valid JSON, no markdown, no explanation.'
+        }, {
+          role: 'user',
+          content: `Return MET values for exercise: "${q}"
+Return a JSON array of 1-3 intensity variations (e.g. light, moderate, vigorous).
+Each item must have exactly these fields:
+{"name":"string (exercise name + intensity, in English)","met":0.0,"emoji":"single emoji"}
+MET examples: walking=3.5, jogging=7, running=9, cycling=6, swimming=6, yoga=2.5, weightlifting=5
+Return ONLY the JSON array.`
+        }]
+      }),
+      signal: AbortSignal.timeout(15000),
+    });
+
+    const raw = await response.json();
+    if (raw.error) return res.status(500).json({ error: raw.error.message });
+
+    const content = raw.choices?.[0]?.message?.content || '';
+    const clean = content.replace(/\`\`\`json|\`\`\`/g, '').trim();
+    let workouts;
+    try { workouts = JSON.parse(clean); }
+    catch(e) { return res.status(500).json({ error: 'Could not parse AI response' }); }
+
+    const result = { workouts };
+    cacheSet(cacheKey, result);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── Start ─────────────────────────────────────────────────────────────────
 app.listen(process.env.PORT || 3000, () => console.log('NutriFlow proxy running!'));
