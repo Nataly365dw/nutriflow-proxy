@@ -233,9 +233,10 @@ Return ONLY the JSON array.`
 // ── /workout-search ───────────────────────────────────────────────────────
 app.get('/workout-search', async (req, res) => {
   const q = (req.query.q || '').trim();
+  const lang = (req.query.lang || 'en').trim();
   if (!q) return res.status(400).json({ error: 'Missing query' });
 
-  const cacheKey = 'workout:' + q.toLowerCase();
+  const cacheKey = 'workout:' + lang + ':' + q.toLowerCase();
   const cached = cacheGet(cacheKey);
   if (cached) { res.setHeader('X-Cache', 'HIT'); return res.json(cached); }
 
@@ -255,7 +256,7 @@ app.get('/workout-search', async (req, res) => {
           content: `Return MET values for exercise: "${q}"
 Return a JSON array of 1-3 intensity variations (e.g. light, moderate, vigorous).
 Each item must have exactly these fields:
-{"name":"string (exercise name + intensity, in English)","met":0.0,"emoji":"single emoji"}
+{"name":"string (exercise name + intensity, written in ${lang === 'tr' ? 'Turkish' : lang === 'de' ? 'German' : lang === 'es' ? 'Spanish' : lang === 'fr' ? 'French' : lang === 'ru' ? 'Russian' : 'English'}, no language code prefix)","met":0.0,"emoji":"single emoji"}
 MET examples: walking=3.5, jogging=7, running=9, cycling=6, swimming=6, yoga=2.5, weightlifting=5
 Return ONLY the JSON array.`
         }]
